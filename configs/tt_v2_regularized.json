@@ -1,0 +1,14 @@
+{
+  "model": "temporal_transformer",
+  "model_args": {"n_dynamic": 13, "n_static": 14, "d_model": 192, "layers": 4,
+                 "heads": 4, "ff": 384, "dropout": 0.4, "use_static": true},
+  "data_root": "/kaggle/input/mesogeos-track-a-processed",
+  "window": 30,
+  "batch_size": 256,
+  "lr": 0.0003,
+  "weight_decay": 0.001,
+  "epochs": 80,
+  "patience": 15,
+  "seed": 0,
+  "out_dir": "/kaggle/working/runs"
+}
