@@ -21,6 +21,26 @@ from wildfire.models.temporal_transformer import TemporalTransformer
 MODELS = {"lstm": LSTMBaseline, "temporal_transformer": TemporalTransformer}
 
 
+def resolve_data_root(configured: str) -> str:
+    """Return a directory that actually contains train.npz.
+
+    Uses the configured path if valid; otherwise searches common roots
+    (handles Kaggle mounting datasets at varying depths, e.g.
+    /kaggle/input/datasets/<user>/<slug>/).
+    """
+    if (Path(configured) / "train.npz").exists():
+        return configured
+    for base in ("/kaggle/input", "/content", "."):
+        hits = list(Path(base).rglob("train.npz")) if Path(base).exists() else []
+        # prefer a folder that also has val.npz + test.npz
+        for h in hits:
+            if (h.parent / "val.npz").exists() and (h.parent / "test.npz").exists():
+                print(f"[data] configured root missing; using {h.parent}")
+                return str(h.parent)
+    raise FileNotFoundError(
+        f"train.npz not found at '{configured}' or under /kaggle/input, /content, .")
+
+
 def evaluate(model, loader, device):
     model.eval()
     ys, ps = [], []
@@ -53,7 +73,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(cfg.get("seed", 0))
 
-    root = cfg["data_root"]
+    root = resolve_data_root(cfg["data_root"])
     window = cfg.get("window", 30)
     train_ds = MesogeosDataset(root, "train", window)
     val_ds = MesogeosDataset(root, "val", window)
