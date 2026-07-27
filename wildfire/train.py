@@ -14,11 +14,21 @@ from pathlib import Path
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import average_precision_score, f1_score, precision_score, recall_score
 
+from functools import partial
+
 from wildfire.data.dataset import MesogeosDataset
 from wildfire.models.lstm import LSTMBaseline
 from wildfire.models.temporal_transformer import TemporalTransformer
+from wildfire.models.sequence_baselines import CNN1D, RNNBaseline
 
-MODELS = {"lstm": LSTMBaseline, "temporal_transformer": TemporalTransformer}
+MODELS = {
+    "lstm": LSTMBaseline,
+    "temporal_transformer": TemporalTransformer,
+    "cnn1d": CNN1D,
+    "rnn": partial(RNNBaseline, cell="rnn"),
+    "gru": partial(RNNBaseline, cell="gru"),
+    "bilstm": partial(RNNBaseline, cell="lstm", bidirectional=True),
+}
 
 
 def resolve_data_root(configured: str) -> str:
@@ -65,11 +75,14 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--epochs", type=int, default=None)
     ap.add_argument("--limit", type=int, default=None, help="subsample train set (smoke test)")
+    ap.add_argument("--out_dir", default=None, help="override config out_dir (portable across machines)")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text())
     if args.epochs:
         cfg["epochs"] = args.epochs
+    if args.out_dir:
+        cfg["out_dir"] = args.out_dir
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(cfg.get("seed", 0))
 

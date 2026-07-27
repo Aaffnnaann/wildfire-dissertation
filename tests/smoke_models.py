@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from wildfire.models.lstm import LSTMBaseline
 from wildfire.models.temporal_transformer import TemporalTransformer
+from wildfire.models.sequence_baselines import CNN1D, RNNBaseline
 from wildfire.models.vit import ViTEncoder
 from wildfire.models.fusion import DualBranchFusion
 
@@ -45,9 +46,15 @@ def check(name, model, batch):
 def main():
     torch.manual_seed(0)
     b = fake_batch()
+    print("-- weather/time-series ladder --")
+    check("cnn1d", CNN1D(), b)
+    check("rnn", RNNBaseline(cell="rnn"), b)
+    check("gru", RNNBaseline(cell="gru"), b)
+    check("lstm", LSTMBaseline(), b)
+    check("bilstm", RNNBaseline(cell="lstm", bidirectional=True), b)
+    check("transformer (B)", TemporalTransformer(), b)
+    print("-- satellite + fusion --")
     check("A  ViT (satellite only)", ViTEncoder(), b)
-    check("B  TemporalTransformer", TemporalTransformer(), b)
-    check("0  LSTM baseline", LSTMBaseline(), b)
     check("C  DualBranch concat", DualBranchFusion(fusion="concat"), b)
     check("D  DualBranch cross-attn", DualBranchFusion(fusion="cross"), b)
     print("\nall models forward + backward cleanly")
