@@ -20,17 +20,37 @@ from wildfire.data.dataset import MesogeosDataset
 
 
 def _assemble_patches(patch_root: Path, split: str, n_expected: int):
-    shards = sorted(patch_root.glob(f"{split}_*.npz"))
+    # Preferred: the single assembled file the extraction notebook produces.
+    single = patch_root / f"{split}.npz"
+    if single.exists():
+        d = np.load(single)
+        patches, idx = d["patches"], d["idx"]
+        if len(patches) == n_expected and np.array_equal(idx, np.arange(n_expected)):
+            return patches
+        out = np.full((n_expected, *patches.shape[1:]), np.nan, np.float32)
+        out[idx] = patches
+        return out
+    # Fallback: raw date-batch shards (each carries an idx + split column).
+    shards = sorted(patch_root.glob("shard_*.npz")) + sorted(patch_root.glob(f"{split}_*.npz"))
     if not shards:
-        raise FileNotFoundError(f"no patch shards for '{split}' in {patch_root}")
-    first = np.load(shards[0])["patches"]
-    win, ch = first.shape[1], first.shape[3]
-    out = np.full((n_expected, win, win, ch), np.nan, np.float32)
+        raise FileNotFoundError(f"no patches ({split}.npz or shards) in {patch_root}")
+    win = ch = None
+    out = None
     seen = 0
     for s in shards:
-        d = np.load(s)
-        out[d["idx"]] = d["patches"]
-        seen += len(d["idx"])
+        d = np.load(s, allow_pickle=True)
+        if "split" in d.files:                       # shard_*.npz carries all splits
+            m = d["split"].astype(str) == split
+            if not m.any():
+                continue
+            idx, pat = d["idx"][m], d["patches"][m]
+        else:
+            idx, pat = d["idx"], d["patches"]
+        if out is None:
+            win, ch = pat.shape[1], pat.shape[3]
+            out = np.full((n_expected, win, win, ch), np.nan, np.float32)
+        out[idx] = pat
+        seen += len(idx)
     if seen != n_expected:
         print(f"[warn] {split}: assembled {seen} patches, expected {n_expected}")
     return out

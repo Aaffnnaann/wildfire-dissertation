@@ -17,9 +17,12 @@ from sklearn.metrics import average_precision_score, f1_score, precision_score, 
 from functools import partial
 
 from wildfire.data.dataset import MesogeosDataset
+from wildfire.data.multimodal import MultimodalDataset
 from wildfire.models.lstm import LSTMBaseline
 from wildfire.models.temporal_transformer import TemporalTransformer
 from wildfire.models.sequence_baselines import CNN1D, RNNBaseline
+from wildfire.models.vit import ViTEncoder
+from wildfire.models.fusion import DualBranchFusion
 
 MODELS = {
     "lstm": LSTMBaseline,
@@ -28,27 +31,45 @@ MODELS = {
     "rnn": partial(RNNBaseline, cell="rnn"),
     "gru": partial(RNNBaseline, cell="gru"),
     "bilstm": partial(RNNBaseline, cell="lstm", bidirectional=True),
+    "vit": ViTEncoder,
+    "fusion_concat": partial(DualBranchFusion, fusion="concat"),
+    "fusion_cross": partial(DualBranchFusion, fusion="cross"),
 }
 
 
-def resolve_data_root(configured: str) -> str:
-    """Return a directory that actually contains train.npz.
+def _find_root(configured: str, required_key: str) -> str:
+    """Return a directory whose train.npz contains `required_key`.
 
-    Uses the configured path if valid; otherwise searches common roots
-    (handles Kaggle mounting datasets at varying depths, e.g.
+    Disambiguates the temporal npz ('dynamic') from the patch npz ('patches')
+    when both are mounted on Kaggle, and tolerates varying mount depths (e.g.
     /kaggle/input/datasets/<user>/<slug>/).
     """
-    if (Path(configured) / "train.npz").exists():
+    p = Path(configured) / "train.npz"
+    if p.exists() and required_key in np.load(p).files:
         return configured
     for base in ("/kaggle/input", "/content", "."):
-        hits = list(Path(base).rglob("train.npz")) if Path(base).exists() else []
-        # prefer a folder that also has val.npz + test.npz
-        for h in hits:
-            if (h.parent / "val.npz").exists() and (h.parent / "test.npz").exists():
-                print(f"[data] configured root missing; using {h.parent}")
-                return str(h.parent)
+        if not Path(base).exists():
+            continue
+        for h in Path(base).rglob("train.npz"):
+            if not (h.parent / "val.npz").exists():
+                continue
+            try:
+                if required_key in np.load(h).files:
+                    print(f"[data] '{required_key}' root -> {h.parent}")
+                    return str(h.parent)
+            except Exception:
+                continue
     raise FileNotFoundError(
-        f"train.npz not found at '{configured}' or under /kaggle/input, /content, .")
+        f"train.npz with key '{required_key}' not found at '{configured}' "
+        f"or under /kaggle/input, /content, .")
+
+
+def resolve_data_root(configured: str) -> str:
+    return _find_root(configured, "dynamic")
+
+
+def resolve_patch_root(configured: str) -> str:
+    return _find_root(configured, "patches")
 
 
 def evaluate(model, loader, device):
@@ -88,9 +109,16 @@ def main():
 
     root = resolve_data_root(cfg["data_root"])
     window = cfg.get("window", 30)
-    train_ds = MesogeosDataset(root, "train", window)
-    val_ds = MesogeosDataset(root, "val", window)
-    test_ds = MesogeosDataset(root, "test", window)
+    if cfg.get("patch_root"):                     # multimodal (ViT / fusion) models
+        proot = resolve_patch_root(cfg["patch_root"])
+        train_ds = MultimodalDataset(root, proot, "train", window)
+        stats = train_ds.stats
+        val_ds = MultimodalDataset(root, proot, "val", window, patch_stats=stats)
+        test_ds = MultimodalDataset(root, proot, "test", window, patch_stats=stats)
+    else:
+        train_ds = MesogeosDataset(root, "train", window)
+        val_ds = MesogeosDataset(root, "val", window)
+        test_ds = MesogeosDataset(root, "test", window)
     if args.limit:
         idx = np.random.RandomState(0).permutation(len(train_ds))[:args.limit]
         train_ds = Subset(train_ds, idx.tolist())

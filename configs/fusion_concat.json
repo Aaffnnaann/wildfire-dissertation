@@ -1,0 +1,14 @@
+{
+  "model": "fusion_concat",
+  "model_args": {"dropout": 0.3},
+  "data_root": "/kaggle/input/mesogeos-track-a-processed",
+  "patch_root": "/kaggle/input/mesogeos-patches",
+  "window": 30,
+  "batch_size": 128,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "epochs": 60,
+  "patience": 12,
+  "seed": 0,
+  "out_dir": "runs"
+}
