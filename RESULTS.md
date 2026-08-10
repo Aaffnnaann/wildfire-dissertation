@@ -3,11 +3,18 @@
 Primary metric: test-set AUPRC. Chronological split (train 2006–19 / val 2020 / test 2021–22).
 Published baselines: LSTM 0.853, Transformer 0.856, GTN 0.858 (Kondylatos et al., NeurIPS 2023).
 
+## Best result
+
+**Ensemble (HistGradientBoosting + GRU + CNN-1D + gated fusion): test AUPRC 0.8847, F1 0.8078.**
+Averaging the probabilities of four diverse model families beats every single model and the published
+GTN SOTA (0.858) by +0.027. The multimodal fusion model contributes decorrelated predictions.
+
 ## Full model comparison (test AUPRC, ranked)
 
 | Rank | Model | Family | Test AUPRC | Test F1 |
 |---|---|---|---|---|
-| 1 | HistGradientBoosting | classical | **0.8739** | 0.783 |
+| — | **Ensemble (4 models)** | **classical + deep + multimodal** | **0.8847** | **0.808** |
+| 1 | HistGradientBoosting | classical | 0.8739 | 0.783 |
 | 2 | GRU | weather (deep) | 0.8643 | 0.768 |
 | 3 | CNN-1D | weather (deep) | 0.8615 | 0.779 |
 | 4 | LSTM | weather (deep) | 0.8601 | 0.771 |
