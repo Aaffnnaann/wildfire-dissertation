@@ -1,0 +1,16 @@
+{
+  "model": "fusion_cross",
+  "model_args": {"dropout": 0.4, "gated": true, "sat_kwargs": {"in_ch": 5, "layers": 4, "d_model": 192}},
+  "data_root": "/kaggle/input/mesogeos-track-a-processed",
+  "patch_root": "/kaggle/input/mesogeos-patches",
+  "patch_mask": true,
+  "patch_augment": true,
+  "window": 30,
+  "batch_size": 128,
+  "lr": 0.0003,
+  "weight_decay": 0.0005,
+  "epochs": 70,
+  "patience": 14,
+  "seed": 0,
+  "out_dir": "runs"
+}

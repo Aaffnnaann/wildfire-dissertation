@@ -57,8 +57,10 @@ def _assemble_patches(patch_root: Path, split: str, n_expected: int):
 
 
 class MultimodalDataset(Dataset):
-    def __init__(self, root, patch_root, split, window=30, patch_stats=None):
+    def __init__(self, root, patch_root, split, window=30, patch_stats=None,
+                 add_mask=False, augment=False):
         self.temporal = MesogeosDataset(root, split, window)
+        self.augment = augment
         n = len(self.temporal)
         patches = _assemble_patches(Path(patch_root), split, n)
 
@@ -71,15 +73,32 @@ class MultimodalDataset(Dataset):
             std = np.array(patch_stats["std"], np.float32)
             self.stats = patch_stats
 
-        patches = (patches - mean) / np.maximum(std, 1e-6)
-        self.patches = np.nan_to_num(patches, nan=0.0).astype(np.float32)
+        patches = (patches - mean) / np.maximum(std, 1e-6)   # NaNs stay NaN here
+        mask = np.isfinite(patches).all(axis=-1, keepdims=True).astype(np.float32)
+        patches = np.nan_to_num(patches, nan=0.0).astype(np.float32)
+        if add_mask:                                  # append a valid/missing channel
+            patches = np.concatenate([patches, mask], axis=-1)
+        self.patches = patches
 
     def __len__(self):
         return len(self.temporal)
 
+    def _aug(self, p):                                # p: [H, W, C]
+        if np.random.rand() < 0.5:
+            p = p[:, ::-1]
+        if np.random.rand() < 0.5:
+            p = p[::-1, :]
+        k = np.random.randint(4)
+        if k:
+            p = np.rot90(p, k)
+        return np.ascontiguousarray(p)
+
     def __getitem__(self, i):
         item = self.temporal[i]
-        item["patch"] = torch.from_numpy(self.patches[i])
+        p = self.patches[i]
+        if self.augment:
+            p = self._aug(p)
+        item["patch"] = torch.from_numpy(p)
         return item
 
     def save_stats(self, path):

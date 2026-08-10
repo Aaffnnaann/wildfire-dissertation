@@ -111,10 +111,15 @@ def main():
     window = cfg.get("window", 30)
     if cfg.get("patch_root"):                     # multimodal (ViT / fusion) models
         proot = resolve_patch_root(cfg["patch_root"])
-        train_ds = MultimodalDataset(root, proot, "train", window)
+        add_mask = cfg.get("patch_mask", False)
+        aug = cfg.get("patch_augment", False)
+        train_ds = MultimodalDataset(root, proot, "train", window,
+                                     add_mask=add_mask, augment=aug)
         stats = train_ds.stats
-        val_ds = MultimodalDataset(root, proot, "val", window, patch_stats=stats)
-        test_ds = MultimodalDataset(root, proot, "test", window, patch_stats=stats)
+        val_ds = MultimodalDataset(root, proot, "val", window,
+                                   patch_stats=stats, add_mask=add_mask)
+        test_ds = MultimodalDataset(root, proot, "test", window,
+                                    patch_stats=stats, add_mask=add_mask)
     else:
         train_ds = MesogeosDataset(root, "train", window)
         val_ds = MesogeosDataset(root, "val", window)
