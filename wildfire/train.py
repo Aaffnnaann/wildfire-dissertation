@@ -72,7 +72,7 @@ def resolve_patch_root(configured: str) -> str:
     return _find_root(configured, "patches")
 
 
-def evaluate(model, loader, device):
+def predict(model, loader, device):
     model.eval()
     ys, ps = [], []
     with torch.no_grad():
@@ -81,7 +81,10 @@ def evaluate(model, loader, device):
             p = torch.sigmoid(model(batch))
             ys.append(batch["y"].cpu().numpy())
             ps.append(p.cpu().numpy())
-    y, p = np.concatenate(ys), np.concatenate(ps)
+    return np.concatenate(ys), np.concatenate(ps)
+
+
+def metrics(y, p):
     yhat = (p >= 0.5).astype(int)
     return {
         "auprc": float(average_precision_score(y, p)),
@@ -89,6 +92,11 @@ def evaluate(model, loader, device):
         "precision": float(precision_score(y, yhat, zero_division=0)),
         "recall": float(recall_score(y, yhat)),
     }
+
+
+def evaluate(model, loader, device):
+    y, p = predict(model, loader, device)
+    return metrics(y, p)
 
 
 def main():
@@ -179,7 +187,9 @@ def main():
 
     model.load_state_dict(best_state)
     torch.save(best_state, out_dir / "best.pt")
-    test = evaluate(model, test_dl, device)
+    y_te, p_te = predict(model, test_dl, device)
+    test = metrics(y_te, p_te)
+    np.savez(out_dir / "preds.npz", y=y_te, p=p_te)   # for ensembling
     print(f"TEST  auprc={test['auprc']:.4f} f1={test['f1']:.4f} "
           f"precision={test['precision']:.4f} recall={test['recall']:.4f}")
     (out_dir / "results.json").write_text(json.dumps(

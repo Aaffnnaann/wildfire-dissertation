@@ -8,13 +8,17 @@ chronological split, so numbers are directly comparable.
 
 Run:  python -m wildfire.classical
 """
+import argparse
 import json
 import numpy as np
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
 from sklearn.metrics import average_precision_score, f1_score, precision_score, recall_score
 
-DATA = Path(r"C:\Users\Afnan\Desktop\Dissertation\data\processed")
+from wildfire.train import resolve_data_root
+
+DEFAULT_DATA = r"C:\Users\Afnan\Desktop\Dissertation\data\processed"
+DATA = Path(resolve_data_root(DEFAULT_DATA))
 
 
 def load(split):
@@ -37,7 +41,17 @@ def report(name, y, p):
             "recall": round(float(recall_score(y, yhat)), 4)}
 
 
+def save_preds(out_root, name, y, p):
+    d = Path(out_root) / name
+    d.mkdir(parents=True, exist_ok=True)
+    np.savez(d / "preds.npz", y=y.astype(np.float32), p=p.astype(np.float32))
+
+
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out_dir", default="runs")
+    args = ap.parse_args()
+
     Xtr, ytr, wtr = load("train")
     Xte, yte, _ = load("test")
     print(f"features={Xtr.shape[1]} train={len(ytr)} test={len(yte)}")
@@ -51,20 +65,23 @@ def main():
     rf = RandomForestClassifier(n_estimators=400, max_depth=None, n_jobs=-1,
                                 class_weight="balanced", random_state=0)
     rf.fit(Xtr_imp, ytr, sample_weight=wtr)
-    results.append(report("random_forest", yte, rf.predict_proba(Xte_imp)[:, 1]))
+    p_rf = rf.predict_proba(Xte_imp)[:, 1]
+    results.append(report("random_forest", yte, p_rf))
+    save_preds(args.out_dir, "random_forest", yte, p_rf)
 
     # HistGradientBoosting handles NaN natively.
     hgb = HistGradientBoostingClassifier(max_iter=500, learning_rate=0.05,
                                          l2_regularization=1.0, random_state=0)
     hgb.fit(Xtr, ytr, sample_weight=wtr)
-    results.append(report("hist_grad_boost", yte, hgb.predict_proba(Xte)[:, 1]))
+    p_hgb = hgb.predict_proba(Xte)[:, 1]
+    results.append(report("hist_grad_boost", yte, p_hgb))
+    save_preds(args.out_dir, "hist_grad_boost", yte, p_hgb)
 
     print(f"\n{'model':<20}{'test_auprc':>12}{'test_f1':>10}")
     for r in sorted(results, key=lambda x: -x["auprc"]):
         print(f"{r['model']:<20}{r['auprc']:>12}{r['f1']:>10}")
-    print("\nDL comparison: GRU 0.864  LSTM 0.860  Transformer 0.843  (paper GTN 0.858)")
 
-    out = Path(__file__).resolve().parents[1] / "runs" / "classical"
+    out = Path(args.out_dir) / "classical"
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").write_text(json.dumps(results, indent=1))
 
