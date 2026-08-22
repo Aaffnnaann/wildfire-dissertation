@@ -105,6 +105,7 @@ def main():
     ap.add_argument("--epochs", type=int, default=None)
     ap.add_argument("--limit", type=int, default=None, help="subsample train set (smoke test)")
     ap.add_argument("--out_dir", default=None, help="override config out_dir (portable across machines)")
+    ap.add_argument("--window", type=int, default=None, help="override input history length (days)")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text())
@@ -112,6 +113,8 @@ def main():
         cfg["epochs"] = args.epochs
     if args.out_dir:
         cfg["out_dir"] = args.out_dir
+    if args.window:
+        cfg["window"] = args.window
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(cfg.get("seed", 0))
 
