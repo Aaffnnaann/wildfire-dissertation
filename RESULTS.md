@@ -63,4 +63,24 @@ Answers "why 30 days and not 1/2/3?". Test AUPRC rises steeply then plateaus:
 Short windows (1&ndash;3 days) discard antecedent-drought signal (a ~0.03&ndash;0.05 AUPRC penalty);
 30 days is the benchmark standard sitting on the saturated plateau. Figure: figures/window_ablation.png.
 
+## Feature ablation (can we drop variables?)
+
+Random-Forest importance (top): t2m 21.8%, d2m 8.9%, lst_night 8.3%, ndvi 8.0%, ssrd 7.8%,
+rh 7.2%, smi 7.2%. All 13 dynamic variables outrank every static one (each static &lt;1%).
+
+Test AUPRC (gradient boosting) vs. number of variables:
+
+| Variables | Test AUPRC |
+|---|---|
+| top-3 | 0.747 |
+| top-5 | 0.801 |
+| top-8 (weather) | 0.820 |
+| top-13 (all dynamic) | 0.841 |
+| top-20 | 0.871 |
+| all 27 | 0.874 |
+
+Performance rises monotonically &mdash; variables are NOT largely redundant; the full set is justified.
+Dropping to 8 costs 0.054; dropping all statics costs 0.033. A lean top-8 weather model recovers ~94%.
+Figure: figures/feature_ablation.png.
+
 Interactive report: https://claude.ai/code/artifact/626b119d-2b39-42af-b98e-d8d621cf9050
