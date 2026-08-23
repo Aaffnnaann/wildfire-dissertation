@@ -47,4 +47,20 @@ GTN SOTA (0.858) by +0.027. The multimodal fusion model contributes decorrelated
 | ViT (satellite) | 0.7154 | 0.7609 | +0.046 (validity mask + augmentation) |
 | Cross-attn fusion | 0.8259 | 0.8478 | +0.022 (gated residual fusion) |
 
+## Window-length ablation (GRU, all else fixed)
+
+Answers "why 30 days and not 1/2/3?". Test AUPRC rises steeply then plateaus:
+
+| Window (days) | Val AUPRC | Test AUPRC | Test F1 |
+|---|---|---|---|
+| 1 | 0.8454 | 0.8180 | 0.7423 |
+| 3 | 0.8696 | 0.8382 | 0.7630 |
+| 7 | 0.8828 | 0.8582 | 0.7775 |
+| 14 | 0.8934 | 0.8605 | 0.7697 |
+| 30 | 0.8946 | 0.8643 | 0.7679 |
+
+~87% of the gain (1&rarr;30: +0.046 AUPRC) occurs within the first 7 days; it plateaus after ~14.
+Short windows (1&ndash;3 days) discard antecedent-drought signal (a ~0.03&ndash;0.05 AUPRC penalty);
+30 days is the benchmark standard sitting on the saturated plateau. Figure: figures/window_ablation.png.
+
 Interactive report: https://claude.ai/code/artifact/626b119d-2b39-42af-b98e-d8d621cf9050
