@@ -1,0 +1,13 @@
+{
+ "config": {
+  "model": "random_forest_seed4"
+ },
+ "seed": 4,
+ "val_auprc": 0.8373497152221017,
+ "test": {
+  "auprc": 0.8055,
+  "f1": 0.7281,
+  "precision": 0.7237,
+  "recall": 0.7327
+ }
+}

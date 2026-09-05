@@ -1,4 +1,8 @@
-﻿runs/
+runs/
+# The count-matched sensitivity run is quoted in the dissertation (Table A3) and is
+# small (~540 KB), so its predictions and metrics are archived rather than ignored.
+!runs/matched/
+!runs/matched/**
 __pycache__/
 *.pyc
 .ipynb_checkpoints/

@@ -1,0 +1,13 @@
+{
+ "config": {
+  "model": "hist_grad_boost_seed4"
+ },
+ "seed": 4,
+ "val_auprc": 0.8920573390302153,
+ "test": {
+  "auprc": 0.8703,
+  "f1": 0.7856,
+  "precision": 0.7911,
+  "recall": 0.7801
+ }
+}
