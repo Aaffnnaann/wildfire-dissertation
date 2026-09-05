@@ -6,6 +6,7 @@ Run:  python -m wildfire.train --config configs/lstm.json
 """
 import argparse
 import json
+import random
 import time
 import numpy as np
 import torch
@@ -23,6 +24,7 @@ from wildfire.models.temporal_transformer import TemporalTransformer
 from wildfire.models.sequence_baselines import CNN1D, RNNBaseline
 from wildfire.models.vit import ViTEncoder
 from wildfire.models.fusion import DualBranchFusion
+from wildfire.models.gtn import GatedTransformerNetwork
 
 MODELS = {
     "lstm": LSTMBaseline,
@@ -31,10 +33,19 @@ MODELS = {
     "rnn": partial(RNNBaseline, cell="rnn"),
     "gru": partial(RNNBaseline, cell="gru"),
     "bilstm": partial(RNNBaseline, cell="lstm", bidirectional=True),
+    "gtn": GatedTransformerNetwork,
     "vit": ViTEncoder,
     "fusion_concat": partial(DualBranchFusion, fusion="concat"),
     "fusion_cross": partial(DualBranchFusion, fusion="cross"),
 }
+
+
+def set_seed(seed: int):
+    """Seed every RNG that affects training, for reproducible repeated runs."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def _find_root(configured: str, required_key: str) -> str:
@@ -106,6 +117,9 @@ def main():
     ap.add_argument("--limit", type=int, default=None, help="subsample train set (smoke test)")
     ap.add_argument("--out_dir", default=None, help="override config out_dir (portable across machines)")
     ap.add_argument("--window", type=int, default=None, help="override input history length (days)")
+    ap.add_argument("--seed", type=int, default=None, help="override config seed (for repeated runs)")
+    ap.add_argument("--tag", default=None,
+                    help="suffix for the run directory, e.g. 'seed1' (keeps repeats separate)")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text())
@@ -115,8 +129,10 @@ def main():
         cfg["out_dir"] = args.out_dir
     if args.window:
         cfg["window"] = args.window
+    if args.seed is not None:
+        cfg["seed"] = args.seed
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch.manual_seed(cfg.get("seed", 0))
+    set_seed(cfg.get("seed", 0))
 
     root = resolve_data_root(cfg["data_root"])
     window = cfg.get("window", 30)
@@ -153,7 +169,12 @@ def main():
                             weight_decay=cfg.get("weight_decay", 1e-4))
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg["epochs"])
 
-    out_dir = Path(cfg.get("out_dir", "runs")) / cfg["model"]
+    # Name the run after the config file (not cfg["model"]), so variants such as
+    # vit_v2.json and fusion_cross_v2.json get their own directories instead of
+    # overwriting the base model's results.
+    base_name = cfg.get("run_name", Path(args.config).stem)
+    run_name = base_name + (f"_{args.tag}" if args.tag else "")
+    out_dir = Path(cfg.get("out_dir", "runs")) / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
     best_auprc, best_state, patience_left = -1.0, None, cfg.get("patience", 8)
 
@@ -192,11 +213,15 @@ def main():
     torch.save(best_state, out_dir / "best.pt")
     y_te, p_te = predict(model, test_dl, device)
     test = metrics(y_te, p_te)
-    np.savez(out_dir / "preds.npz", y=y_te, p=p_te)   # for ensembling
+    # Validation predictions are saved as well so that any decision threshold can
+    # be selected on validation data only, never on the test set.
+    y_va, p_va = predict(model, val_dl, device)
+    np.savez(out_dir / "preds.npz", y=y_te, p=p_te, y_val=y_va, p_val=p_va)
     print(f"TEST  auprc={test['auprc']:.4f} f1={test['f1']:.4f} "
           f"precision={test['precision']:.4f} recall={test['recall']:.4f}")
     (out_dir / "results.json").write_text(json.dumps(
-        {"config": cfg, "val_auprc": best_auprc, "test": test}, indent=1))
+        {"config": cfg, "seed": cfg.get("seed", 0), "n_params": int(n_params),
+         "epochs_run": epoch, "val_auprc": best_auprc, "test": test}, indent=1))
 
 
 if __name__ == "__main__":

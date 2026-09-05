@@ -83,4 +83,104 @@ Performance rises monotonically &mdash; variables are NOT largely redundant; the
 Dropping to 8 costs 0.054; dropping all statics costs 0.033. A lean top-8 weather model recovers ~94%.
 Figure: figures/feature_ablation.png.
 
+## Per-region breakdown (can we focus on a smaller area?)
+
+Gradient boosting (basin-wide) test AUPRC by Mediterranean sub-region. Raw AUPRC is confounded by
+fire prevalence, so lift = AUPRC / chance-baseline is the fair skill measure:
+
+| Region | Fires | Fire % | Raw AUPRC | Lift |
+|---|---|---|---|---|
+| Italy & Central | 629 | 56% | 0.953 | 1.70 |
+| Maghreb | 166 | 24% | 0.897 | 3.71 |
+| Balkans & Greece | 191 | 36% | 0.883 | 2.49 |
+| E. Med (Turkey/Levant) | 83 | 20% | 0.697 | 3.58 |
+| Iberia | 292 | 22% | 0.643 | 2.86 |
+
+Raw AUPRC varies (0.64&ndash;0.95) but that is mostly base-rate, not skill: by lift the model works well
+everywhere (1.7&ndash;3.7&times;), strongest in low-prevalence Maghreb/E.Med. So the model already generalises
+across the basin; regional subsetting would lose data with no fair-metric gain. Figure: figures/per_region.png.
+
+## Dataset audit (project CSV vs published Track A counts)
+
+`python -m wildfire.audit_dataset` &rarr; `data/processed/dataset_audit.json`.
+
+The project files hold 25,916 samples against the 25,722 reported in the paper. The gap is
+**entirely extra negatives**: positives are identical (8,574, diff 0), negatives are 17,342 vs 17,148.
+Not duplicates &mdash; all 17,342 negatives have distinct (cell, date) keys, positive/negative key
+overlap is zero, and every sample has exactly 30 rows. The surplus is spread across splits
+(train +151, val +30, test +13), giving a 2.0226 ratio rather than the paper's exact 2.00.
+
+The negative draw is stochastic and neither seed nor sample IDs were published, so exact replication
+is infeasible. Published figures are therefore context, **not** a like-for-like benchmark. Mitigations:
+one internal protocol for all in-study comparisons; re-runs of the three published baselines on the
+project CSV; and a count-matched variant (`wildfire.paper_matched`) as a sensitivity check.
+
+## Repeated seeds (mean &plusmn; SD, 95% CI)
+
+`python -m wildfire.multiseed --seeds 0 1 2 3 4 --out_dir runs/seeds` &rarr; `runs/seeds/seed_summary.csv`.
+
+| Model | Seeds | AUPRC mean | SD | 95% CI |
+|---|---|---|---|---|
+| Ensemble (HistGB+GRU+CNN-1D) | 5 | 0.8811 | 0.0045 | [0.8755, 0.8868] |
+| HistGradientBoosting | 5 | 0.8705 | 0.0022 | [0.8677, 0.8733] |
+| GRU | 5 | 0.8612 | 0.0077 | [0.8516, 0.8708] |
+| LSTM | 5 | 0.8602 | 0.0032 | [0.8562, 0.8641] |
+| CNN-1D | 5 | 0.8602 | 0.0072 | [0.8513, 0.8691] |
+| Transformer | 1 | 0.8334 | &mdash; | &mdash; |
+| GTN | 1 | 0.8123 | &mdash; | &mdash; |
+| Random Forest | 5 | 0.8050 | 0.0007 | [0.8041, 0.8059] |
+
+Transformer and GTN are single-seed (CPU budget); the 5-seed sweep for those and for the ViT/fusion
+models is scripted for GPU in `notebooks/experiments_kaggle.ipynb` (**T4, not P100** &mdash; P100 is sm_60
+and the preinstalled PyTorch needs sm_70+).
+
+## Paired bootstrap (10,000 resamples, fixed test set)
+
+`python -m wildfire.stats_tests` &rarr; `runs/seeds/bootstrap_tests.csv`.
+
+| Comparison | Difference | 95% CI | p | Significant |
+|---|---|---|---|---|
+| HistGB vs GRU | +0.0058 | [&minus;0.0039, +0.0158] | 0.240 | **no** |
+| HistGB vs Ensemble | &minus;0.0091 | [&minus;0.0148, &minus;0.0033] | 0.001 | yes |
+| GRU vs LSTM | +0.0018 | [&minus;0.0040, +0.0079] | 0.552 | **no** |
+| LSTM vs Transformer | +0.0339 | [+0.0229, +0.0448] | 0.000 | yes |
+| Transformer vs GTN | +0.0211 | [+0.0077, +0.0345] | 0.001 | yes |
+
+**Key correction to earlier framing:** gradient boosting's lead over the best recurrent models is
+*not* statistically distinguishable from test-set sampling variation. It is significantly ahead of the
+Transformer and GTN only. Claims of "classical beats deep" were softened accordingly throughout the
+dissertation.
+
+## Calibration and operating points
+
+`python -m wildfire.evaluation` &rarr; `figures/calibration_metrics.csv`, `confusion_matrices.csv`.
+Thresholds maximise F1 on **validation only**; the test split is never used for tuning.
+
+| Model | Brier | ECE (10-bin) | Threshold | Precision | Recall | F1 |
+|---|---|---|---|---|---|---|
+| Ensemble | 0.0946 | 0.0209 | 0.53 | 0.803 | 0.796 | 0.799 |
+| HistGradientBoosting | 0.0987 | 0.0163 | 0.34 | 0.732 | 0.851 | 0.787 |
+| GRU | 0.1003 | 0.0284 | 0.56 | 0.813 | 0.754 | 0.782 |
+| LSTM | 0.1010 | 0.0271 | 0.54 | 0.794 | 0.771 | 0.783 |
+| Transformer | 0.1164 | 0.0485 | 0.56 | 0.760 | 0.769 | 0.764 |
+
+Gradient boosting is the best-calibrated single model; the Transformer is the worst on both Brier and ECE.
+
+## Recall by fire size
+
+`figures/error_by_burned_area.csv`. Detection improves monotonically with eventual fire size, against a
+false-alarm rate of 0.065 on the 2,751 negatives:
+
+| Burned area | Fires | Recall @ threshold | Mean score |
+|---|---|---|---|
+| 30&ndash;100 ha | 525 | 0.735 | 0.695 |
+| 100&ndash;500 ha | 550 | 0.826 | 0.773 |
+| 500&ndash;2000 ha | 191 | 0.843 | 0.769 |
+| &gt;2000 ha | 103 | 0.864 | 0.803 |
+| no fire (negatives) | 2751 | &mdash; | 0.158 |
+
+The model misses hardest on the smallest dangerous fires and is most reliable on the megafires that
+matter most operationally. AUPRC is undefined *within* a band (each contains only fires), so recall at a
+shared threshold is the meaningful quantity.
+
 Interactive report: https://claude.ai/code/artifact/626b119d-2b39-42af-b98e-d8d621cf9050

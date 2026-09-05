@@ -41,49 +41,61 @@ def report(name, y, p):
             "recall": round(float(recall_score(y, yhat)), 4)}
 
 
-def save_preds(out_root, name, y, p):
+def save_run(out_root, name, seed, y, p, y_val, p_val):
+    """Save predictions and a results.json matching the format written by train.py.
+
+    Validation predictions are stored alongside the test predictions so that any
+    decision threshold can be chosen on validation data only.
+    """
     d = Path(out_root) / name
     d.mkdir(parents=True, exist_ok=True)
-    np.savez(d / "preds.npz", y=y.astype(np.float32), p=p.astype(np.float32))
+    np.savez(d / "preds.npz", y=y.astype(np.float32), p=p.astype(np.float32),
+             y_val=y_val.astype(np.float32), p_val=p_val.astype(np.float32))
+    test = report(name, y, p)
+    (d / "results.json").write_text(json.dumps(
+        {"config": {"model": name}, "seed": seed,
+         "val_auprc": float(average_precision_score(y_val, p_val)),
+         "test": {k: v for k, v in test.items() if k != "model"}}, indent=1))
+    return test
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out_dir", default="runs")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--tag", default=None,
+                    help="suffix for run directories, e.g. 'seed1' (keeps repeats separate)")
     args = ap.parse_args()
+    suffix = f"_{args.tag}" if args.tag else ""
 
     Xtr, ytr, wtr = load("train")
+    Xva, yva, _ = load("val")
     Xte, yte, _ = load("test")
-    print(f"features={Xtr.shape[1]} train={len(ytr)} test={len(yte)}")
+    print(f"features={Xtr.shape[1]} train={len(ytr)} val={len(yva)} test={len(yte)} seed={args.seed}")
 
     results = []
 
     # RandomForest can't take NaN -> mean-impute from train columns.
     col_mean = np.nanmean(Xtr, axis=0)
-    Xtr_imp = np.where(np.isnan(Xtr), col_mean, Xtr)
-    Xte_imp = np.where(np.isnan(Xte), col_mean, Xte)
+    imp = lambda X: np.where(np.isnan(X), col_mean, X)
     rf = RandomForestClassifier(n_estimators=400, max_depth=None, n_jobs=-1,
-                                class_weight="balanced", random_state=0)
-    rf.fit(Xtr_imp, ytr, sample_weight=wtr)
-    p_rf = rf.predict_proba(Xte_imp)[:, 1]
-    results.append(report("random_forest", yte, p_rf))
-    save_preds(args.out_dir, "random_forest", yte, p_rf)
+                                class_weight="balanced", random_state=args.seed)
+    rf.fit(imp(Xtr), ytr, sample_weight=wtr)
+    results.append(save_run(args.out_dir, "random_forest" + suffix, args.seed,
+                            yte, rf.predict_proba(imp(Xte))[:, 1],
+                            yva, rf.predict_proba(imp(Xva))[:, 1]))
 
     # HistGradientBoosting handles NaN natively.
     hgb = HistGradientBoostingClassifier(max_iter=500, learning_rate=0.05,
-                                         l2_regularization=1.0, random_state=0)
+                                         l2_regularization=1.0, random_state=args.seed)
     hgb.fit(Xtr, ytr, sample_weight=wtr)
-    p_hgb = hgb.predict_proba(Xte)[:, 1]
-    results.append(report("hist_grad_boost", yte, p_hgb))
-    save_preds(args.out_dir, "hist_grad_boost", yte, p_hgb)
+    results.append(save_run(args.out_dir, "hist_grad_boost" + suffix, args.seed,
+                            yte, hgb.predict_proba(Xte)[:, 1],
+                            yva, hgb.predict_proba(Xva)[:, 1]))
 
-    print(f"\n{'model':<20}{'test_auprc':>12}{'test_f1':>10}")
+    print(f"\n{'model':<24}{'test_auprc':>12}{'test_f1':>10}")
     for r in sorted(results, key=lambda x: -x["auprc"]):
-        print(f"{r['model']:<20}{r['auprc']:>12}{r['f1']:>10}")
-
-    out = Path(args.out_dir) / "classical"
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "results.json").write_text(json.dumps(results, indent=1))
+        print(f"{r['model']:<24}{r['auprc']:>12}{r['f1']:>10}")
 
 
 if __name__ == "__main__":
