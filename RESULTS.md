@@ -168,8 +168,8 @@ Gradient boosting is the best-calibrated single model; the Transformer is the wo
 
 ## Recall by fire size
 
-`figures/error_by_burned_area.csv`. Detection improves monotonically with eventual fire size, against a
-false-alarm rate of 0.065 on the 2,751 negatives:
+`figures/error_by_burned_area.csv` (ensemble, validation-selected threshold 0.53). Detection improves
+monotonically with eventual fire size, against a false-alarm rate of **0.097** on the 2,751 negatives:
 
 | Burned area | Fires | Recall @ threshold | Mean score |
 |---|---|---|---|
@@ -181,6 +181,48 @@ false-alarm rate of 0.065 on the 2,751 negatives:
 
 The model misses hardest on the smallest dangerous fires and is most reliable on the megafires that
 matter most operationally. AUPRC is undefined *within* a band (each contains only fires), so recall at a
-shared threshold is the meaningful quantity.
+shared threshold is the meaningful quantity. This *may* partly reflect the log-burned-area loss
+weighting, but no ablation was run with the weighting removed, so the mechanism is not established.
+
+## Seasonal error breakdown
+
+`figures/error_by_season.csv` (ensemble, threshold 0.53). Months are too small individually
+(36&ndash;836 test samples) to read; meteorological seasons are the smallest reliable grouping.
+The per-month table is still written to `figures/error_by_month.csv`.
+
+| Season | Samples | Fires | Fire % | AUPRC | Lift | Recall | False-alarm rate |
+|---|---|---|---|---|---|---|---|
+| winter (DJF) | 183 | 46 | 25% | 0.875 | 3.48 | 0.587 | 0.022 |
+| spring (MAM) | 1181 | 144 | 12% | 0.801 | 6.57 | 0.542 | 0.012 |
+| summer (JJA) | 2102 | 1065 | 51% | 0.905 | 1.79 | 0.855 | 0.217 |
+| autumn (SON) | 654 | 114 | 17% | 0.791 | 4.54 | 0.649 | 0.052 |
+
+**Spring is the blind spot**: only 54% of spring fires are recovered, the lowest recall of any season,
+despite the highest lift over chance. Summer looks strongest on raw AUPRC but has the lowest lift (1.79)
+and a false-alarm rate an order of magnitude above the rest of the year. A fixed basin-wide threshold
+suits a task whose base rate swings from 12% to 51% across the year poorly; seasonal thresholding is the
+natural next step.
+
+## Count-matched sensitivity check
+
+`python -m wildfire.paper_matched --seed 0` then `wildfire.classical --data ...processed_paper_matched`,
+5 seeds &rarr; `runs/matched/seed_summary.csv`. Tests whether the 194 extra negatives change anything:
+
+| Model | Full project data | Count-matched data | Difference |
+|---|---|---|---|
+| HistGradientBoosting | 0.8705 | 0.8700 | &minus;0.0005 |
+| Random Forest | 0.8050 | 0.8064 | +0.0014 |
+
+Both changes are under 0.002 AUPRC. The test sets differ, so the comparison is unpaired. The sampling
+discrepancy does not materially affect the results &mdash; but the variant matches the paper's *counts*,
+not its *samples*, so it does not make the published figures comparable.
+
+## Known reproducibility gap
+
+`preds.npz` exists for every model run under the seeded harness (Random Forest, HistGradientBoosting,
+CNN-1D, GRU, LSTM, Transformer, GTN, three-model ensemble). The **ViT, fusion and four-model ensemble**
+rows of the main comparison predate that harness, were produced on Kaggle, and their predictions were
+not retained &mdash; those rows are single runs and cannot be regenerated locally without re-running the
+GPU sweep. Archiving that sweep's outputs is the first thing to fix.
 
 Interactive report: https://claude.ai/code/artifact/626b119d-2b39-42af-b98e-d8d621cf9050

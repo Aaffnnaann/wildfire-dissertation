@@ -65,8 +65,16 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default=None,
                     help="suffix for run directories, e.g. 'seed1' (keeps repeats separate)")
+    ap.add_argument("--data", default=None,
+                    help="override the data root, e.g. the count-matched sensitivity "
+                         "variant produced by wildfire.paper_matched")
     args = ap.parse_args()
     suffix = f"_{args.tag}" if args.tag else ""
+
+    if args.data:
+        global DATA
+        DATA = Path(resolve_data_root(args.data))
+        print(f"[data] {DATA}")
 
     Xtr, ytr, wtr = load("train")
     Xva, yva, _ = load("val")

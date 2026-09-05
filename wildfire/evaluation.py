@@ -104,6 +104,12 @@ def burned_area_band(ba):
     return ">2000 ha"
 
 
+SEASON = {12: "1 winter (DJF)", 1: "1 winter (DJF)", 2: "1 winter (DJF)",
+          3: "2 spring (MAM)", 4: "2 spring (MAM)", 5: "2 spring (MAM)",
+          6: "3 summer (JJA)", 7: "3 summer (JJA)", 8: "3 summer (JJA)",
+          9: "4 autumn (SON)", 10: "4 autumn (SON)", 11: "4 autumn (SON)"}
+
+
 def months_from_doy(years, doys):
     """Calendar month for each (year, day-of-year) pair."""
     return np.array([(date(int(yy), 1, 1) + timedelta(days=int(dd) - 1)).month
@@ -232,7 +238,12 @@ def main():
 
     regions = [assign_region(a, b) for a, b in zip(lon, lat)]
     group_table(regions, "Error analysis by region", "error_by_region.csv")
-    group_table([f"month {mm:02d}" for mm in month], "Error analysis by season",
+    group_table([f"month {mm:02d}" for mm in month], "Error analysis by month",
+                "error_by_month.csv")
+    # Individual months carry as few as 36 test samples, so the monthly table is
+    # too noisy to draw conclusions from. Meteorological seasons give four groups
+    # large enough to compare, and match how fire risk is discussed operationally.
+    group_table([SEASON[mm] for mm in month], "Error analysis by season",
                 "error_by_season.csv")
 
     # Burned-area bands contain only fires, so AUPRC is undefined within a band.
@@ -240,7 +251,9 @@ def main():
     # size, reported against the shared false-alarm rate on the negatives.
     bands = np.array([burned_area_band(b) for b in ba])
     fire = y == 1
-    neg_fp = float(((yhat == 1) & (~fire)).mean()) if (~fire).any() else float("nan")
+    # false-alarm rate is per negative sample, not per test sample
+    neg_fp = (float(((yhat == 1) & (~fire)).sum() / (~fire).sum())
+              if (~fire).any() else float("nan"))
     rows = []
     for g in ["30-100 ha", "100-500 ha", "500-2000 ha", ">2000 ha"]:
         m = (bands == g) & fire
